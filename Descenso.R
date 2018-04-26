@@ -63,6 +63,8 @@ errorF <- function(d,f) {
 
 #Estas son las partes del algoritmo
 
+#aparetemente, el parámetro con mayor influencia sobre la calidad del Descenso es la cantidad de partes en que el for parte el intervalo para buscar el paso, una vez hallada la cota superior.
+#Esta cantidad departes claramente limita la precisión del Descenso, sin importar el error elegido (en realidad se llega al return correspondiente a la repetición del tamaño de pas0 0)
 búsquedaPaso <- function(modelo,datos,parámetros,grad,cota) {
     exp <- -10
     e_0 <- 100
@@ -74,7 +76,7 @@ búsquedaPaso <- function(modelo,datos,parámetros,grad,cota) {
         f <- currificar(modelo,parámetros,grad,10^exp)
         e_1 <- errorF(datos,f)
         }
-    for (i in c(seq(0,paso,length=40))) {
+    for (i in c(seq(0,paso,length=500))) {
         f <- currificar(modelo,parámetros,grad,i)
         e <- errorF(datos,f)
         if (e<e_1) {
@@ -106,9 +108,12 @@ autos <- read.table("/home/octavio/AnálisisExploratorio/Datos/autos.txt",TRUE)
 
 tabla <- data.frame(x=autos$precio,y=autos$calidad)
 
-descensoTabla <- descenderML(tabla,c(1,2),0.000001)
+descensoTabla <- descenderML(tabla,c(1,2),0.00000001)
 errorDescenso <- errorF(autos,~mLineal(.x,descensoTabla))
 lmTabla <- unname(coefficients(lm(y~x+1,tabla)))
 paramTabla <- c(lmTabla[2],lmTabla[1])
 errorlm <- errorF(autos,~mLineal(.x,paramTabla))
-
+print("El error para autos del modelo del Descenso es")
+print(errorDescenso)
+print("Y el de la función incorporada")
+print(errorlm)
