@@ -2,34 +2,34 @@
 
 # Problemas a Resolver: 
 
-# 1) Necesito algo afín al tipo ecuación. Parece que lo puedo solucionar con funciones que tomen dos vectores, uno de parámetros y uno de variables. 
-# 2) De la derivación automática, mejor olvidarse por lo pronto. Para cada modelo voy a escribir la derivada. Sin embargo quizás con métodos numéricos hay un rebusque. 
-# 3) Determinación del tamaño de paso. Para este, voy a implementar una búsqueda lineal por bipartición.  
+# 1) Necesito algo afin al tipo ecuacion. Parece que lo puedo solucionar con funciones que tomen dos vectores, uno de parametros y uno de variables. 
+# 2) De la derivacion automatica, mejor olvidarse por lo pronto. Para cada modelo voy a escribir la derivada. Sin embargo quizas con metodos numericos hay un rebusque. 
+# 3) Determinacion del tamaño de paso. Para este, voy a implementar una busqueda lineal por biparticion.  
 
 library(tidyverse)
 
-#cada modelo es un par de funciones que toma las mismas variables: nuestra función modeladora blahF con parámetros desconocidos y sus variables, y la derivada blahD de su error.
+#cada modelo es un par de funciones que toma las mismas variables: nuestra funcion modeladora blahF con parametros desconocidos y sus variables, y la derivada blahD de su error.
 
 
 
 #Estasprimeras dos funciones tienen por finalidad representar a la familia de los modelos lineales y su derivada. 
 
 
-mLineal <- function(x,parámetros)  {
-    if (length(parámetros) != 2) {return("Cantidad equivocada de coficientes, este modelo toma 2.")}
-    m  <- parámetros[1]
-    b  <- parámetros[2]
+mLineal <- function(x,parametros)  {
+    if (length(parametros) != 2) {return("Cantidad equivocada de coficientes, este modelo toma 2.")}
+    m  <- parametros[1]
+    b  <- parametros[2]
     return(m*x+b)    
     }
 
 
-gradienteML <-function(datos,parámetros){
-    m   <- parámetros[1]
-    b   <- parámetros[2]
+gradienteML <-function(datos,parametros){
+    m   <- parametros[1]
+    b   <- parametros[2]
     xs  <- datos[1]
     ys  <- datos[2]
     n   <- length(datos[[1]])
-    fxs <- map(xs,~mLineal(.x,parámetros))
+    fxs <- map(xs,~mLineal(.x,parametros))
     variables <- c(xs,ys,fxs)
     dM  <- (2/n)  * sum( pmap_dbl(variables,~(..3-..2)*..1) )
     dB  <- (2/n)  * sum( pmap_dbl(variables,~(..3-..2)) )
@@ -38,9 +38,9 @@ gradienteML <-function(datos,parámetros){
 
 #Estas son funciones utilitarias para las partes del algoritmo
 
-currificar <- function(modelo,parámetros,grad,h) {
+currificar <- function(modelo,parametros,grad,h) {
     f <-function(x){
-        u <- parámetros-h*grad
+        u <- parametros-h*grad
         return(modelo(x,u)) 
     }
     return(f)
@@ -63,57 +63,81 @@ errorF <- function(d,f) {
 
 #Estas son las partes del algoritmo
 
-#aparetemente, el parámetro con mayor influencia sobre la calidad del Descenso es la cantidad de partes en que el for parte el intervalo para buscar el paso, una vez hallada la cota superior.
-#Esta cantidad departes claramente limita la precisión del Descenso, sin importar el error elegido (en realidad se llega al return correspondiente a la repetición del tamaño de pas0 0)
-búsquedaPaso <- function(modelo,datos,parámetros,grad,cota) {
-    exp <- -10
-    e_0 <- 100
-    e_1 <- 99
+#aparetemente, el parametro con mayor influencia sobre la calidad del Descenso es la cantidad de partes en que el for parte el intervalo para buscar el paso, una vez hallada la cota superior.
+#Esta cantidad departes claramente limita la precision del Descenso, sin importar el error elegido (en realidad se llega al return correspondiente a la repeticion del tamaño de pas0 0)
+
+busquedaPaso <- function(modelo,datos,parametros,grad,cota,e_0) {
+    exp <- -12
+    e_1 <-  0
     paso <- 0
     while (e_1 < e_0) {
         paso=10^exp
         exp <- exp+1
-        f <- currificar(modelo,parámetros,grad,10^exp)
+        f <- currificar(modelo,parametros,grad,10^exp)
         e_1 <- errorF(datos,f)
         }
     for (i in c(seq(0,paso,length=500))) {
-        f <- currificar(modelo,parámetros,grad,i)
+        f <- currificar(modelo,parametros,grad,i)
         e <- errorF(datos,f)
         if (e<e_1) {
             e_1 <- e
             paso <- i
             } 
         }
-    return(paso)
+    return(c(paso,e_1))
 }
 
-descenderML <- function(datos,parámetros,cota) {
+descenderML <- function(datos,parametros,cota) {
     gradiente <- c(0,0)
     e <- 100
     while (e>cota) {
-        f <- currificar(mLineal,parámetros,gradiente,10)
-        gradiente <- gradienteML(datos,parámetros)
-        paso <- búsquedaPaso(mLineal,datos,parámetros,gradiente,cota)
-        if (paso == 0) {return(parámetros)}
-        parámetros <- parámetros - paso*gradiente
-#        print(parámetros)
-        e <- errorF(datos,f)
+        gradiente <- gradienteML(datos,parametros)
+        pasoyErr <- busquedaPaso(mLineal,datos,parametros,gradiente,cota,e)
+        paso <- pasoyErr[1]
+        ePrevio <- e
+        e <- pasoyErr[2]
+#        print("Error")
+#        print(c(e,ePrevio))
+        parametros <- parametros - paso*gradiente
+        if ( abs(ePrevio - e) < cota ) {return(parametros)}
+#        print("parametros")
+#        print(parametros)
         }
-    return(parámetros)
+    return(parametros)
     }
 
 
 
-autos <- read.table("/home/octavio/AnálisisExploratorio/Datos/autos.txt",TRUE)
+autos <- read.table("./autos.txt",TRUE)
 
 tabla <- data.frame(x=autos$precio,y=autos$calidad)
 
-descensoTabla <- descenderML(tabla,c(1,2),0.00000001)
-errorDescenso <- errorF(autos,~mLineal(.x,descensoTabla))
+mediaPrecio <- mean(autos$precio)
+mediaCalidad <- mean(autos$calidad)
+
+pendMedias <- (mediaCalidad / mediaPrecio)
+ordMin <- min(autos$calidad)
+vec0 <- c(ordMin,pendMedias)
+
+descensoTabla <- descenderML(tabla,c(1,2),10^-7)
+errorDescenso <- errorF(tabla,~mLineal(.x,descensoTabla))
 lmTabla <- unname(coefficients(lm(y~x+1,tabla)))
 paramTabla <- c(lmTabla[2],lmTabla[1])
 errorlm <- errorF(autos,~mLineal(.x,paramTabla))
 print("El error para autos del modelo del Descenso es")
 print(errorDescenso)
-print("Y el de la función incorporada")
+print("Y el de la funcion incorporada")
 print(errorlm)
+
+archivoGalton <- read.csv("./GaltonMod.csv",TRUE)
+galtonAtip <- data.frame(padre=archivoGalton$parent,hijo=archivoGalton$child)
+galton <- galtonAtip[-4,]
+
+descensoGalton <- descenderML(galton,c(1,28),10^(-7))
+errGaltDesc <- errorF(galton,~mLineal(.x,descensoGalton))
+lmGalton <- unname(coefficients(lm(hijo~padre+1,galton)))
+parLmGalton <- c(lmGalton[2],lmGalton[1])
+errorGaltLm <- errorF(galton,~mLineal(.x,parLmGalton))
+print(c(errGaltDesc,errorGaltLm))
+print("Arriba error descenso y error lm, abajo parámetros descenso y parámetros lm")
+print(c(descensoGalton,parLmGalton))
