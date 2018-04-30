@@ -155,8 +155,8 @@ fig3 <- fig2 +
   geom_abline(data = rectas, mapping = aes(intercept = ordenada, slope = pendiente),
               alpha = 0.2, color ="steelblue3") +
   labs(title = "Fig. 3: Alturas de padres e hijos, junto con curvas de ajuste lineal") +
-  scale_y_continuous(breaks = seq(0, 300, 1)) +
-  scale_x_continuous(breaks = seq(0, 300, 1))
+  scale_y_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1)) +
+  scale_x_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1))
 
 ggsave("fig3_dispersion_curvas.png", fig3, width = 12, height = 8)
 fig3
