@@ -38,7 +38,7 @@ Comenzamos graficando los datos crudos:
 ```{r}
 fig1 <- ggplot(data = galton, mapping = aes(y = hijo, x = padre)) +
   # position="jitter" les agrega un ligero "ruido" a los puntos para visualizarlos mejor
-  geom_point(position="jitter") +
+  geom_point(position = "jitter") +
   labs(title = "Fig. 1: Alturas de padres e hijos, sin limpiar")
 
 ggsave("fig1_dispersion_sin_limpiar.png", fig1, width = 12, height = 8)
@@ -58,8 +58,10 @@ galton <- galton %>%
 
 fig2 <- ggplot(data = galton, mapping = aes(y = hijo, x = padre)) +
   # position="jitter" les agrega un ligero "ruido" a los puntos para visualizarlos mejor
-  geom_point(position="jitter") +
-  labs(title = "Fig. 2: Alturas de padres e hijos, en centímetros, limpias")
+  geom_point(position = "jitter") +
+  labs(title = "Fig. 2: Alturas de padres e hijos, en centímetros, limpias") +
+  scale_y_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1)) +
+  scale_x_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1))
 
 ggsave("fig2_dispersion_limpia.png", fig2, width = 12, height = 8)
 fig2
@@ -154,9 +156,7 @@ Se puede observar de la tabla anterior que el rango de las ordenadas como de las
 fig3 <- fig2 +
   geom_abline(data = rectas, mapping = aes(intercept = ordenada, slope = pendiente),
               alpha = 0.2, color ="steelblue3") +
-  labs(title = "Fig. 3: Alturas de padres e hijos, junto con curvas de ajuste lineal") +
-  scale_y_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1)) +
-  scale_x_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1))
+  labs(title = "Fig. 3: Alturas de padres e hijos, junto con curvas de ajuste lineal")
 
 ggsave("fig3_dispersion_curvas.png", fig3, width = 12, height = 8)
 fig3
