@@ -76,7 +76,7 @@ busquedaPaso <- function(modelo,datos,parametros,grad,cota,e_0) {
         f <- currificar(modelo,parametros,grad,10^exp)
         e_1 <- errorF(datos,f)
         }
-    for (i in c(seq(0,paso,length=500))) {
+    for (i in c(seq(0,paso,length=5))) {
         f <- currificar(modelo,parametros,grad,i)
         e <- errorF(datos,f)
         if (e<e_1) {
@@ -112,12 +112,7 @@ autos <- read.table("./autos.txt",TRUE)
 
 tabla <- data.frame(x=autos$precio,y=autos$calidad)
 
-mediaPrecio <- mean(autos$precio)
-mediaCalidad <- mean(autos$calidad)
 
-pendMedias <- (mediaCalidad / mediaPrecio)
-ordMin <- min(autos$calidad)
-vec0 <- c(ordMin,pendMedias)
 
 descensoTabla <- descenderML(tabla,c(1,2),10^-7)
 errorDescenso <- errorF(tabla,~mLineal(.x,descensoTabla))
@@ -133,7 +128,7 @@ archivoGalton <- read.csv("./GaltonMod.csv",TRUE)
 galtonAtip <- data.frame(padre=archivoGalton$parent,hijo=archivoGalton$child)
 galton <- galtonAtip[-4,]
 
-descensoGalton <- descenderML(galton,c(1,28),10^(-7))
+descensoGalton <- descenderML(galton,c(1,5.85),10^(-7))
 errGaltDesc <- errorF(galton,~mLineal(.x,descensoGalton))
 lmGalton <- unname(coefficients(lm(hijo~padre+1,galton)))
 parLmGalton <- c(lmGalton[2],lmGalton[1])

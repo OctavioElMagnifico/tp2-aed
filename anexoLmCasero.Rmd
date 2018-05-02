@@ -1,0 +1,222 @@
+---
+title: "TP2 Análisis Exploratorio de Datos, Anexo: Implementación de LM"
+author: "Gonzalo Barrera Borla, Octavio M. Duarte y Juan Manuel Berros"
+date: "28 de Abril de 2018"
+output:
+  html_document: default
+---
+
+```{r}
+library("tidyverse")
+```
+# Descenso por el Gradiente
+
+Con el fin de profundizar en el funcionamiento de este 
+El algoritmo es bastante sencillo en su concepción pero no fue fácil de implementar. 
+
+
+## Implementación de una familia de funciones como variable
+
+
+Aunque esto se puede lograr mejor usando atributos de objetos (o clases de tipos en un lenguaje funcional) la falta de familiaridad con los niveles más profundos de R no permitió un desarrollo con ese nivel de elegancia.
+
+El único modelo implementado es el lineal, aunque sería fácil incorporar otros. Cada modelo consiste en una función que toma dos vectores de variables, el primero son los parámetros que definen una función puntual de la familia (ordenada al origen y pendiente para el lineal) y el segundo las variables propiamente dichas, en este caso la abcisa. Además, es necesario implementar el gradiente de la función error asociada al modelo, dado que hacer que R obtenga este gradiente no es una tarea trivial (quizás por métodos numéricos sería más sencilo).
+
+
+
+
+```{r modelo} 
+
+mLineal <- function(x,parametros)  {
+    if (length(parametros) != 2) {return("Cantidad equivocada de coficientes, este modelo toma 2.")}
+    m  <- parametros[1]
+    b  <- parametros[2]
+    return(m*x+b)    
+    }
+
+
+gradienteML <-function(datos,parametros){
+    m   <- parametros[1]
+    b   <- parametros[2]
+    xs  <- datos[1]
+    ys  <- datos[2]
+    n   <- length(datos[[1]])
+    fxs <- map(xs,~mLineal(.x,parametros))
+    variables <- c(xs,ys,fxs)
+    dM  <- (2/n)  * sum( pmap_dbl(variables,~(..3-..2)*..1) )
+    dB  <- (2/n)  * sum( pmap_dbl(variables,~(..3-..2)) )
+    return(c(dM,dB))
+    } 
+```
+
+
+Para hacer más fácil evaluar cada nuevo modelo obtenido, se incorpora la función currificar, que dado un juego de parámetros fija estos haciendo que dejen de ser variables y efectivamente transforma al modelo mLineal en la recta puntual que definen los parámetros dados.
+
+```{r currificar}
+currificar <- function(modelo,parametros,grad,h) {
+    f <-function(x){
+        u <- parametros-h*grad
+        return(modelo(x,u)) 
+    }
+    return(f)
+}
+```
+
+Para realizar las evaluaciones necesarias, además necesito una función que busque el error según la función currificada que se le entrega. 
+
+```{r utilitarias}
+normaEC <- function(x,y) {
+    return((x-y)^2)
+    }
+
+errorF <- function(d,f) {
+	x <- d[[1]]
+	y <- d[[2]]
+	n <- length(x)
+	fxs <- map(x,f)
+	v <- map2_dbl(fxs,y,normaEC)
+	e <- sum(v)/n
+	return(e)
+}
+```
+
+## Implementación del Descenso por el Gradiente
+
+El programa refleja con cierta fidelidad el esquema del algoritmo propiamente dicho. 
+Toma los datos y una cota deseada del error (la cual intenta respetar, pero como se ve en el código no se compromete a hacerlo).
+
+Lo primero que hace es probar una cantidad de puntos repartidos al azar dentro de un rango que según el modelo parece razonable y tomar como punto inicial el de menor error. Esto le da a la función cierta inmunidad a la no convexidad del modelo en caso de existir.
+
+Disponiendo de un punto inicial y de un modelo, la función evalua sobre él el gradiente y realiza una búsqueda lineal que le permite encontrar, usando al dirección que el gradiente señala, un punto con menor error al precedente, dentro de un segmento dado.
+
+Se formula los nuevos parámetros usando el ancho de paso hallado y la dirección del gradiente y se itera. 
+
+```{r descenso}
+descenderML <- function(datos,cota) {
+    grilla <- armarGrilla(datos,10)
+    parametros <- buscarEnGrilla(mLineal,datos,grilla) 
+    gradiente <- c(0,0)
+    e <- 100
+    while (e>cota) {
+        gradiente <- gradienteML(datos,parametros)
+        pasoyErr <- busquedaPaso(mLineal,datos,parametros,gradiente,cota,e)
+        paso <- pasoyErr[1]
+        ePrevio <- e
+        e <- pasoyErr[2]
+        parametros <- parametros - paso*gradiente
+        if ( abs(ePrevio - e) < cota ) {return(parametros)}
+        }
+    return(parametros)
+    }
+```
+
+La búsqueda lineal es un factor muy sensible en el éxito de la implementación. 
+En este caso se intenta buscar un segmento lo más extenso posible para maximizar el tamño de paso, y después un segundo bucle intenta buscar dentro del segmento extenso el punto donde el error se minimiza. 
+
+```{r paso}
+busquedaPaso <- function(modelo,datos,parametros,grad,cota,e_0) {
+    exp <- -10
+    e_1 <-  0
+    paso <- 0
+    while (e_1 < e_0) {
+        paso=10^exp
+        exp <- exp+1
+        f <- currificar(modelo,parametros,grad,10^exp)
+        e_1 <- errorF(datos,f)
+        }
+    for (i in c(seq(0,paso,length=10))) {
+        f <- currificar(modelo,parametros,grad,i)
+        e <- errorF(datos,f)
+        if (e<e_1) {
+            e_1 <- e
+            paso <- i
+            } 
+        }
+    return(c(paso,e_1))
+}
+```
+
+El código que sigue corresponde a la primera búsqueda a ciegas que realiza el algoritmo de descenso para tener un punto inicial.
+
+```{r grilla}
+
+armarGrilla <- function(datos,dim) {
+    xMin <- min(datos[,1])
+    xMax <- max(datos[,1])
+    yMin <- min(datos[,2])
+    yMax <- max(datos[,2])
+    mMax <- ( (yMax - yMin)/(xMax-xMin) )
+    mMin <- (- mMax)
+    bMin <- (yMin /2.3)
+    bMax <- (yMax /2.3)
+    ejeM <- c(seq(mMin,mMax,length=dim))
+    ejeB <- c(seq(bMin,bMax,length=dim))
+    grilla <- c()
+    for (i in 1:dim) {
+        grilla[(((i-1)*dim)+1):(i*dim)] <- map(ejeB,~c(ejeM[i],.))
+        }
+    return(grilla)
+    }
+
+
+
+buscarEnGrilla <- function(modelo,datos,grilla) {
+    e <- 10000
+    param <- c(0,0)
+    salidas <- c()
+    for (i in grilla){
+        eN <- errorF(datos,~modelo(.x,i))
+        salidas <- c(salidas,eN)
+        if (eN < e) {
+            e <- eN
+            param <- i
+                }
+        }
+    return(param)
+    }
+```
+
+## Prueba de Campo
+
+
+El gráfico de puntos dispersos de Galton muestra que es "rugoso" y de lo más desafiante para un algoritmo que básicamente "camina sobre el terreno", así para una primera demostración optamos por "autos".
+
+### Autos
+
+``` {r prueba autos, cache=T}
+autos <- read.table("./autos.txt",TRUE)
+tabla <- data.frame(x=autos$precio,y=autos$calidad)
+
+descensoTabla <- descenderML(tabla,10^-6)
+
+errorDescenso <- errorF(tabla,~mLineal(.x,descensoTabla))
+lmTabla <- unname(coefficients(lm(y~x+1,tabla)))
+paramTabla <- c(lmTabla[2],lmTabla[1])
+errorlm <- errorF(autos,~mLineal(.x,paramTabla))
+```
+El error para autos del modelo del Descenso es `r errorDescenso` y el de la funcion incorporada es `r errorlm`. 
+
+
+### Datos de Galton
+
+Finalmente, nos avocamos a Galton.
+
+```{r galton , cache=T}
+
+archivoGalton <- read.csv("./GaltonMod.csv",TRUE)
+galtonAtip <- data.frame(padre=archivoGalton$parent,hijo=archivoGalton$child)
+galton <- galtonAtip[-4,]
+
+descensoGalton <- descenderML(galton,10^(-6))
+errorGaltDesc <- errorF(galton,~mLineal(.x,descensoGalton))
+lmGalton <- unname(coefficients(lm(hijo~padre+1,galton)))
+parLmGalton <- c(lmGalton[2],lmGalton[1])
+errorGaltLm <- errorF(galton,~mLineal(.x,parLmGalton))
+```
+
+En este caso, el error que nos da el modelo hallado por el Descenso es `r errorGaltDesc` mientras que el error hallado por el LM incorporado es `r errorGaltLm`. Los coeficientes son aceptablemente similares: La pendiente que halla el descenso es `r descensoGalton[1]` mientras que la sugerida por el LM es `r parLmGalton[1]`. La ordenada o intercept sugerida por el descenso es `r descensoGalton[2]` mientras que la del LM es `r parLmGalton[2]`.   
+
+
+### Conclusiones
+La presente implementación es muy costosa a nivel computacional y requiere gran cantidad de optimizaciones para acercarse a la excelente precisión de la implementación del LM (aparentemente basada en descomposición en valores singulares de matrices)  que incluye R. Sin embargo, exhibe el comportamiento deseado: es capaz de desplazar los parámetros grandes distancias para obtener soluciones óptimas y arroja parametrizaciones de precisión similar a la de dicho algoritmo llegando en condiciones óptimas a aproximar 5 cifras decimales de este.
+
