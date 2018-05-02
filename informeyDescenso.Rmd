@@ -4,7 +4,6 @@ author: "Gonzalo Barrera Borla, Octavio M. Duarte y Juan Manuel Berros"
 date: "28 de Abril de 2018"
 output:
   html_document: default
-  pdf_document: default
 ---
 
 # Carga de librerías y datos
@@ -339,20 +338,16 @@ El gráfico de puntos dispersos de Galton muestra que es "rugoso" y de lo más d
 
 ``` {r prueba autos, cache=T}
 autos <- read.table("./autos.txt",TRUE)
-
 tabla <- data.frame(x=autos$precio,y=autos$calidad)
 
-
 descensoTabla <- descenderML(tabla,10^-6)
+
 errorDescenso <- errorF(tabla,~mLineal(.x,descensoTabla))
 lmTabla <- unname(coefficients(lm(y~x+1,tabla)))
 paramTabla <- c(lmTabla[2],lmTabla[1])
 errorlm <- errorF(autos,~mLineal(.x,paramTabla))
-print("El error para autos del modelo del Descenso es")
-print(errorDescenso)
-print("Y el de la funcion incorporada")
-print(errorlm)
 ```
+El error para autos del modelo del Descenso es `r errorDescenso` y el de la funcion incorporada es `r errorlm`. 
 
 ### Datos de Galton
 
@@ -365,14 +360,13 @@ galtonAtip <- data.frame(padre=archivoGalton$parent,hijo=archivoGalton$child)
 galton <- galtonAtip[-4,]
 
 descensoGalton <- descenderML(galton,10^(-6))
-errGaltDesc <- errorF(galton,~mLineal(.x,descensoGalton))
+errorGaltDesc <- errorF(galton,~mLineal(.x,descensoGalton))
 lmGalton <- unname(coefficients(lm(hijo~padre+1,galton)))
 parLmGalton <- c(lmGalton[2],lmGalton[1])
 errorGaltLm <- errorF(galton,~mLineal(.x,parLmGalton))
-print(c(errGaltDesc,errorGaltLm))
-print("Arriba error descenso y error lm, abajo parámetros descenso y parámetros lm")
-print(c(descensoGalton,parLmGalton))
 ```
+
+En este caso, el error que nos da el modelo hallado por el Descenso es `r errorGaltDesc` mientras que el error hallado por el LM incorporado es `r errorGaltLm`. Los coeficientes son aceptablemente similares: La pendiente que halla el descenso es `r descensoGalton[1]` mientras que la sugerida por el LM es `r parLmGalton[1]. La ordenada o intercept sugerida por el descenso es `r descensoGalton[2]` mientras que la del LM es `r parLmGalton`.   
 
 
 ### Conclusiones
