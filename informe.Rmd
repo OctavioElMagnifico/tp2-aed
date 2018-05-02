@@ -1,15 +1,10 @@
 ---
-output:
-  html_document: default
-  pdf_document: default
----
-  ---
 title: "TP2 Análisis Exploratorio de Datos"
 author: "Gonzalo Barrera Borla, Octavio M. Duarte y Juan Manuel Berros"
 date: "28 de Abril de 2018"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 
 # Carga de librerías y datos
