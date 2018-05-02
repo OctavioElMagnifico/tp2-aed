@@ -45,7 +45,7 @@ ggsave("fig1_dispersion_sin_limpiar.png", fig1, width = 12, height = 8)
 fig1
 ```
 
-Resultan evidente dos cosas:
+Resultan evidentes dos cosas:
 1. Las alturas de padres e hijos están en una unidad extraña de medida, aparentemente pulgadas. Multiplicamos por 2,54 para transformarlas a centímetros.
 2. Hay al menos 1 registro con valores imposiblemente altos para la altura de `hijo`. Como límite razonable, utilizaremos 272 cm, la máxima altura registrada para un ser humano según [Wikipedia](https://en.wikipedia.org/wiki/List_of_tallest_people).
 
@@ -73,7 +73,7 @@ fig2
 
 A continuación intentaremos ajustar distintas familias de modelos a los datos. Ya que el único predictor disponible para `hijo` es `padre`, intentaremos ajustar $m=4$ polinomios de grados 0, 1, 2 y 3 inclusive sobre `padre` y ver cómo se comparan. Comenzamos declarando una lista de fórmulas para cada modelo:
 
-Por otra parte, necesitamos un criterio de selección de modelos. para comparar los resultados. Para ello, utilizaremos un esquema de _k-pliegues_, asignando a cada observación un valor de $k$ al azar:
+Por otra parte, necesitamos un criterio de selección de modelos para comparar los resultados. Para ello, utilizaremos un esquema de _k-pliegues_, asignando a cada observación un valor de $k$ al azar:
 
 ```{r}
 formulas_modelos <- list(
@@ -137,7 +137,7 @@ resultados <- kfold %>%
 kable(resultados)
 ```
 
-Dado que el ECM para los modelos cuadrático y cúbico son prácticamente idénticos al del modelo lineal, podemos asumir con tranquilidad que un modelo lineal es el más parsimomioso para ajustar los datos. Veamos, sobre el gráfico de dispersión anterior, las `r K` rectas que generamos con cada conjunto de entrenamiento:
+Dado que los  ECM para los modelos cuadrático y cúbico son prácticamente idénticos al del modelo lineal, podemos asumir con tranquilidad que un modelo lineal es el más parsimonioso para ajustar los datos. Veamos, sobre el gráfico de dispersión anterior, las `r K` rectas que generamos con cada conjunto de entrenamiento:
 
 ```{r}
 rectas <- kfold %>%
@@ -150,7 +150,7 @@ rectas <- kfold %>%
 kable(head(rectas))
 ```
 
-Se puede observar de la tabla anterior que el rango de las ordenadas como de las pendientes es bastante acotado, con lo cual las `r K` regresiones van a ser bastante similares:
+Se puede observar de la tabla anterior que el rango de las ordenadas tanto  como de las pendientes es bastante acotado, con lo cual las `r K` regresiones van a ser bastante similares:
 
 ```{r}
 fig3 <- fig2 +
