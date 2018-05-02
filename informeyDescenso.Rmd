@@ -1,0 +1,380 @@
+---
+title: "TP2 Análisis Exploratorio de Datos"
+author: "Gonzalo Barrera Borla, Octavio M. Duarte y Juan Manuel Berros"
+date: "28 de Abril de 2018"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+# Carga de librerías y datos
+El siguiente análisis utiliza librerías del "pulcriverso", o _tidyverse_, como _dplyr_ (para manipular _tibbles_, o _data frames_), _purrr_ (para vectorizar el trabajo sobre data frames) y _magrittr_ (para encadenar operaciones), junto con _knitr_ para generar este informe.
+
+Revisar el archivo `galtonMod.csv` en cualquier editor de texto nos revela que las dos primeras columnas contienen el número de observación de forma redundante, con lo cual podemos eliminar una. Adicionalmente, renombraremos las columnas con identificadores más descriptivos.
+
+```{r inicializacion, include=FALSE}
+library(tidyverse)
+library(knitr)
+opts_chunk$set(fig.width=12, fig.height=8, message=FALSE, comment=NA)
+```
+
+```{r lectura_datos}
+galton <- read_csv(
+  "GaltonMod.csv", skip = 1,
+  col_names = c("indice", "obs", "padre", "hijo"),
+  col_types = cols(
+    indice = col_integer(),
+    obs = col_integer(),
+    padre = col_double(),
+    hijo = col_double()
+  )) %>%
+  select(-indice)
+```
+
+# Limpieza de datos
+
+Comenzamos graficando los datos crudos:
+
+```{r}
+fig1 <- ggplot(data = galton, mapping = aes(y = hijo, x = padre)) +
+  # position="jitter" les agrega un ligero "ruido" a los puntos para visualizarlos mejor
+  geom_point(position="jitter") +
+  labs(title = "Fig. 1: Alturas de padres e hijos, sin limpiar")
+
+ggsave("fig1_dispersion_sin_limpiar.png", fig1, width = 12, height = 8)
+fig1
+```
+
+Resultan evidente dos cosas:
+1. Las alturas de padres e hijos están en una unidad extraña de medida, aparentemente pulgadas. Multiplicamos por 2,54 para transformarlas a centímetros.
+2. Hay al menos 1 registro con valores imposiblemente altos para la altura de `hijo`. Como límite razonable, utilizaremos 272 cm, la máxima altura registrada para un ser humano según [Wikipedia](https://en.wikipedia.org/wiki/List_of_tallest_people).
+
+Hechas las correcciones, volvemos a graficar la dispersión de `padre` e `hijo`, para comprobar que los datos se vean coherentes:
+
+```{r}
+galton <- galton %>%
+  mutate(padre = padre * 2.54, hijo = hijo * 2.54) %>%
+  filter(padre < 272, hijo < 272)
+
+fig2 <- ggplot(data = galton, mapping = aes(y = hijo, x = padre)) +
+  # position="jitter" les agrega un ligero "ruido" a los puntos para visualizarlos mejor
+  geom_point(position="jitter") +
+  labs(title = "Fig. 2: Alturas de padres e hijos, en centímetros, limpias")
+
+ggsave("fig2_dispersion_limpia.png", fig2, width = 12, height = 8)
+fig2
+```
+
+¡Satisfactorio!
+
+# Ajuste y selección de modelos lineales
+
+A continuación intentaremos ajustar distintas familias de modelos a los datos. Ya que el único predictor disponible para `hijo` es `padre`, intentaremos ajustar $m=4$ polinomios de grados 0, 1, 2 y 3 inclusive sobre `padre` y ver cómo se comparan. Comenzamos declarando una lista de fórmulas para cada modelo:
+
+Por otra parte, necesitamos un criterio de selección de modelos. para comparar los resultados. Para ello, utilizaremos un esquema de _k-pliegues_, asignando a cada observación un valor de $k$ al azar:
+
+```{r}
+formulas_modelos <- list(
+  "constante" = hijo ~ 1,
+  "lineal" = hijo ~ padre,
+  "cuadratico" = hijo ~ poly(padre, 2),
+  "cubico" = hijo ~ poly(padre, 3)
+)
+
+K <- 20
+
+galton <- galton %>%
+  mutate(k = sample(K, n(), replace = T))
+```
+
+El esquema de _k-pliegues_ requiere entrenar a cada modelo $k$ veces, usando en la i-ésima iteración los datos con $k \neq i$ para el entrenamiento, y los datos con $k = i$ para la evaluación. Es decir que si comparamos $m$ modelos, tendremos que entrenar en total $m \times k$ regresiones lineales distintas.
+
+Las siguientes funciones auxiliares nos permitirán recuperar los datos necesarios con facilidad, así como entrenar al modelo m-ésimo sobre la k-ésima partición, y calcular su error cuadrático medio (ECM/MSE)
+
+```{r}
+galton_train <- function(k_test) { galton %>% filter(k != k_test) }
+galton_test <-  function(k_test) { galton %>% filter(k == k_test) }
+
+entrenar_m_en_k <- function(m, k) { lm(formulas_modelos[[m]], galton_train(k))}
+predecir_m_en_k <- function(mod, k) { predict(mod, newdata = galton_test(k))}
+
+calcular_ecm <- function(y, y_hat) { mean((y - y_hat)^2) }
+```
+
+Prepararemos ahora un _tibble_ (una clase que hereda del _data frame_ y se lleva mejor con las librerías de _tidyverse_) con los elementos relevantes de cada uno de los $m \times k$ ajustes lineales:
+
+- `id_modelo`, el nombre del modelo a utilizar,
+- $k_{test}$, el número de pliego sobre el cual calcular la pérdida del modelo ajustado,
+- `modelo`, el ajuste del m-ésimo modelo a los k-ésimos datos de entrenamiento,
+- `n_k_test` ($N(k_{test})$), la cantidad de elementos a predecir,
+- `y_test` ($Y_{test}$), los valores a predecir,
+- `predicciones_test` ($\hat{Y}_{test}$), las predicciones para $Y_{test}$, y
+- `ecm` el error cuadrático medio
+
+```{r}
+n_modelos <- length(formulas_modelos)
+
+kfold <- tibble(
+  id_modelo = rep(names(formulas_modelos), times = K),
+  k_test = rep(1:K, each = n_modelos),
+  modelo = map2(id_modelo, k_test, entrenar_m_en_k),
+  y_test = map(k_test, galton_test) %>% map("hijo"),
+  predicciones_test = map2(modelo, k_test, predecir_m_en_k),
+  n_k_test = map_int(y_test, length),
+  ecm = map2_dbl(y_test, predicciones_test, calcular_ecm))
+```
+
+Ahora necesitamos computar el ECM promedio para cada modelo, para lo cual habrá que ponderar los ECM por cada modelo en cada pliego:
+
+```{r}
+resultados <- kfold %>%
+  select(id_modelo, n_k_test, ecm) %>%
+  group_by(id_modelo) %>%
+  summarise(ecm_total = weighted.mean(ecm, n_k_test))
+
+kable(resultados)
+```
+
+Dado que el ECM para los modelos cuadrático y cúbico es prácticamente idéntico al del modelo lineal, podemos asumir con tranquilidad que un modelo lineal es el más parsimonioso para ajustar los datos. Veamos, sobre el gráfico de dispersión anterior, las `r K` rectas que generamos con cada conjunto de entrenamiento:
+
+```{r}
+rectas <- kfold %>%
+  filter(id_modelo == "lineal") %>%
+  mutate(coeficientes = map(modelo, coef),
+         ordenada = map_dbl(coeficientes, 1),
+         pendiente = map_dbl(coeficientes, 2)) %>%
+  select(k_test, ordenada, pendiente)
+
+kable(head(rectas))
+```
+
+Se puede observar de la tabla anterior que el rango tanto de las ordenadas como de las pendientes es bastante acotado, con lo cual las `r K` regresiones van a ser bastante similares:
+
+```{r}
+fig3 <- fig2 +
+  geom_abline(data = rectas, mapping = aes(intercept = ordenada, slope = pendiente),
+              alpha = 0.2, color ="steelblue3") +
+  labs(title = "Fig. 3: Alturas de padres e hijos, junto con curvas de ajuste lineal") +
+  scale_y_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1)) +
+  scale_x_continuous(breaks = seq(0, 300, 5), minor_breaks = seq(0, 300, 1))
+
+ggsave("fig3_dispersion_curvas.png", fig3, width = 12, height = 8)
+fig3
+```
+
+
+# Descenso por el Gradiente
+
+Con el fin de profundizar en el funcionamiento de este 
+El algoritmo es bastante sencillo en su concepción pero no fue fácil de implementar. 
+
+
+## Implementación de una familia de funciones como variable
+
+
+Aunque esto se puede lograr mejor usando atributos de objetos (o clases de tipos en un lenguaje funcional) la falta de familiaridad con los niveles más profundos de R no permitió un desarrollo con ese nivel de elegancia.
+
+El único modelo implementado es el lineal, aunque sería fácil incorporar otros. Cada modelo consiste en una función que toma dos vectores de variables, el primero son los parámetros que definen una función puntual de la familia (ordenada al origen y pendiente para el lineal) y el segundo las variables propiamente dichas, en este caso la abcisa. Además, es necesario implementar el gradiente de la función error asociada al modelo, dado que hacer que R obtenga este gradiente no es una tarea trivial (quizás por métodos numéricos sería más sencilo).
+
+
+
+
+```{r modelo} 
+
+mLineal <- function(x,parametros)  {
+    if (length(parametros) != 2) {return("Cantidad equivocada de coficientes, este modelo toma 2.")}
+    m  <- parametros[1]
+    b  <- parametros[2]
+    return(m*x+b)    
+    }
+
+
+gradienteML <-function(datos,parametros){
+    m   <- parametros[1]
+    b   <- parametros[2]
+    xs  <- datos[1]
+    ys  <- datos[2]
+    n   <- length(datos[[1]])
+    fxs <- map(xs,~mLineal(.x,parametros))
+    variables <- c(xs,ys,fxs)
+    dM  <- (2/n)  * sum( pmap_dbl(variables,~(..3-..2)*..1) )
+    dB  <- (2/n)  * sum( pmap_dbl(variables,~(..3-..2)) )
+    return(c(dM,dB))
+    } 
+```
+
+
+Para hacer más fácil evaluar cada nuevo modelo obtenido, se incorpora la función currificar, que dado un juego de parámetros fija estos haciendo que dejen de ser variables y efectivamente transforma al modelo mLineal en la recta puntual que definen los parámetros dados.
+
+```{r currificar}
+currificar <- function(modelo,parametros,grad,h) {
+    f <-function(x){
+        u <- parametros-h*grad
+        return(modelo(x,u)) 
+    }
+    return(f)
+}
+```
+
+Para realizar las evaluaciones necesarias, además necesito una función que busque el error según la función currificada que se le entrega. 
+
+```{r utilitarias}
+normaEC <- function(x,y) {
+    return((x-y)^2)
+    }
+
+errorF <- function(d,f) {
+	x <- d[[1]]
+	y <- d[[2]]
+	n <- length(x)
+	fxs <- map(x,f)
+	v <- map2_dbl(fxs,y,normaEC)
+	e <- sum(v)/n
+	return(e)
+}
+```
+
+## Implementación del Descenso por el Gradiente
+
+El programa refleja con cierta fidelidad el esquema del algoritmo propiamente dicho. 
+Toma los datos y una cota deseada del error (la cual intenta respetar, pero como se ve en el código no se compromete a hacerlo).
+
+Lo primero que hace es probar una cantidad de puntos repartidos al azar dentro de un rango que según el modelo parece razonable y tomar como punto inicial el de menor error. Esto le da a la función cierta inmunidad a la no convexidad del modelo en caso de existir.
+
+Disponiendo de un punto inicial y de un modelo, la función evalua sobre él el gradiente y realiza una búsqueda lineal que le permite encontrar, usando al dirección que el gradiente señala, un punto con menor error al precedente, dentro de un segmento dado.
+
+Se formula los nuevos parámetros usando el ancho de paso hallado y la dirección del gradiente y se itera. 
+
+```{r descenso}
+descenderML <- function(datos,cota) {
+    grilla <- armarGrilla(datos,10)
+    parametros <- buscarEnGrilla(mLineal,datos,grilla) 
+    gradiente <- c(0,0)
+    e <- 100
+    while (e>cota) {
+        gradiente <- gradienteML(datos,parametros)
+        pasoyErr <- busquedaPaso(mLineal,datos,parametros,gradiente,cota,e)
+        paso <- pasoyErr[1]
+        ePrevio <- e
+        e <- pasoyErr[2]
+        parametros <- parametros - paso*gradiente
+        if ( abs(ePrevio - e) < cota ) {return(parametros)}
+        }
+    return(parametros)
+    }
+```
+
+La búsqueda lineal es un factor muy sensible en el éxito de la implementación. 
+En este caso se intenta buscar un segmento lo más extenso posible para maximizar el tamño de paso, y después un segundo bucle intenta buscar dentro del segmento extenso el punto donde el error se minimiza. 
+
+```{r paso}
+busquedaPaso <- function(modelo,datos,parametros,grad,cota,e_0) {
+    exp <- -10
+    e_1 <-  0
+    paso <- 0
+    while (e_1 < e_0) {
+        paso=10^exp
+        exp <- exp+1
+        f <- currificar(modelo,parametros,grad,10^exp)
+        e_1 <- errorF(datos,f)
+        }
+    for (i in c(seq(0,paso,length=10))) {
+        f <- currificar(modelo,parametros,grad,i)
+        e <- errorF(datos,f)
+        if (e<e_1) {
+            e_1 <- e
+            paso <- i
+            } 
+        }
+    return(c(paso,e_1))
+}
+```
+
+El código que sigue corresponde a la primera búsqueda a ciegas que realiza el algoritmo de descenso para tener un punto inicial.
+
+```{r grilla}
+
+armarGrilla <- function(datos,dim) {
+    xMin <- min(datos[,1])
+    xMax <- max(datos[,1])
+    yMin <- min(datos[,2])
+    yMax <- max(datos[,2])
+    mMax <- ( (yMax - yMin)/(xMax-xMin) )
+    mMin <- (- mMax)
+    bMin <- (yMin /2.3)
+    bMax <- (yMax /2.3)
+    ejeM <- c(seq(mMin,mMax,length=dim))
+    ejeB <- c(seq(bMin,bMax,length=dim))
+    grilla <- c()
+    for (i in 1:dim) {
+        grilla[(((i-1)*dim)+1):(i*dim)] <- map(ejeB,~c(ejeM[i],.))
+        }
+    return(grilla)
+    }
+
+
+
+buscarEnGrilla <- function(modelo,datos,grilla) {
+    e <- 10000
+    param <- c(0,0)
+    salidas <- c()
+    for (i in grilla){
+        eN <- errorF(datos,~modelo(.x,i))
+        salidas <- c(salidas,eN)
+        if (eN < e) {
+            e <- eN
+            param <- i
+                }
+        }
+    return(param)
+    }
+```
+
+## Prueba de Campo
+
+
+El gráfico de puntos dispersos de Galton muestra que es "rugoso" y de lo más desafiante para un algoritmo que básicamente "camina sobre el terreno", así para una primera demostración optamos por "autos".
+
+### Autos
+
+``` {r prueba autos, cache=T}
+autos <- read.table("./autos.txt",TRUE)
+
+tabla <- data.frame(x=autos$precio,y=autos$calidad)
+
+
+descensoTabla <- descenderML(tabla,10^-6)
+errorDescenso <- errorF(tabla,~mLineal(.x,descensoTabla))
+lmTabla <- unname(coefficients(lm(y~x+1,tabla)))
+paramTabla <- c(lmTabla[2],lmTabla[1])
+errorlm <- errorF(autos,~mLineal(.x,paramTabla))
+print("El error para autos del modelo del Descenso es")
+print(errorDescenso)
+print("Y el de la funcion incorporada")
+print(errorlm)
+```
+
+### Datos de Galton
+
+Finalmente, nos avocamos a Galton.
+
+```{r galton , cache=T}
+
+archivoGalton <- read.csv("./GaltonMod.csv",TRUE)
+galtonAtip <- data.frame(padre=archivoGalton$parent,hijo=archivoGalton$child)
+galton <- galtonAtip[-4,]
+
+descensoGalton <- descenderML(galton,10^(-6))
+errGaltDesc <- errorF(galton,~mLineal(.x,descensoGalton))
+lmGalton <- unname(coefficients(lm(hijo~padre+1,galton)))
+parLmGalton <- c(lmGalton[2],lmGalton[1])
+errorGaltLm <- errorF(galton,~mLineal(.x,parLmGalton))
+print(c(errGaltDesc,errorGaltLm))
+print("Arriba error descenso y error lm, abajo parámetros descenso y parámetros lm")
+print(c(descensoGalton,parLmGalton))
+```
+
+
+### Conclusiones
+La presente implementación es muy costosa a nivel computacional y requiere gran cantidad de optimizaciones para acercarse a la excelente precisión de la implementación del LM (aparentemente basada en descomposición en valores singulares de matrices)  que incluye R. Sin embargo, exhibe el comportamiento deseado: es capaz de desplazar los parámetros grandes distancias para obtener soluciones óptimas y arroja parametrizaciones de precisión similar a la de dicho algoritmo llegando en condiciones óptimas a aproximar 5 cifras decimales de este.
+
